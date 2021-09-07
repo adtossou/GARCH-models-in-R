@@ -1,0 +1,333 @@
+---
+title: "GARCH Model"
+author: "Armand Tossou"
+date: "9/7/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# add this line to avoid errors in compilation. See: https://stackoverflow.com/questions/30519673/cant-resolve-error-in-rmd-file-anonymous-withcallinghandlers-withvisi
+knitr::opts_chunk$set(error = TRUE)
+```
+
+
+
+## Introduction
+
+Generalized AutoRegressive Conditional Heteroskedasticity (GARCH) models are good for times series data that are very volatile. This sample project showcases how various GARCH models can be fitted and how predictions can be made. Apple stock prices are used for the application.
+
+![apple stock returns](C:/Users/adtos/Downloads/apple_stock.jpeg)
+
+
+## Apple daily prices
+
+We'll use the `getSymbols()` function from R's [`quantmod`](https://cran.r-project.org/web/packages/quantmod/quantmod.pdf) package to retrieve stock data for Apple.
+
+```{r}
+#install.packages("quantmod")
+library(quantmod)
+
+# retrive Apple stock data
+getSymbols("AAPL",from = "2008-01-01",to = "2019-12-31")
+
+```
+
+Let's plot the series.
+
+
+```{r }
+chartSeries(AAPL)
+
+```
+
+
+## Daily returns
+
+We'll use the `CalculateReturns()` function from R's [`PerformanceAnalytics`](https://cran.r-project.org/web/packages/PerformanceAnalytics/PerformanceAnalytics.pdf) package.
+
+
+```{r }
+# install and call library
+install.packages("PerformanceAnalytics")
+library(PerformanceAnalytics)
+
+# get daily returns series
+return <- CalculateReturns(AAPL$AAPL.Close)
+
+# preview the data
+head(return)
+```
+Let's drop the first observation from the dataset:
+
+```{r }
+return <- return[-1]
+
+head(return)
+
+```
+
+Create a histogram of daily returns:
+
+
+```{r }
+hist(return)
+
+```
+
+
+A more detailed histogram of daily returns:
+
+
+```{r }
+
+chart.Histogram(return,
+                methods = c('add.density', 'add.normal'),
+                colorset = c('blue', 'green', 'red'))
+
+```
+
+
+Plot the daily returns series:
+
+
+
+```{r }
+
+chartSeries(return)
+
+```
+
+
+## Annualized volatility
+
+
+
+```{r }
+
+chart.RollingPerformance(R = return["2008::2019"],
+                         width = 252,
+                         FUN = "sd.annualized",
+                         scale = 252,
+                         main = "Apple's yearly rolling volatility")
+
+```
+
+
+## sGARCH model with contant mean
+
+We'll use the `ugarchspec()` function from R's [`rugarch``](https://cran.r-project.org/web/packages/rugarch/rugarch.pdf) package.This method is used for creating a univariate GARCH specification object prior to fitting.
+
+```{r }
+# install and load package
+install.packages("rugarch")
+library(rugarch)
+
+# create the plot
+s <- ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                variance.model = list(model = "sGARCH"),
+                distribution.model = 'norm')
+
+m <- ugarchfit(data = return, spec = s)
+
+plot(m, which = 'all')
+
+```
+
+
+## Fitted series
+
+
+
+```{r }
+
+f <- ugarchforecast(fitORspec = m, n.ahead = 20)
+
+plot(fitted(f))
+
+```
+
+
+## 
+
+
+
+```{r }
+
+plot(sigma(f))
+
+```
+
+
+## Application example - portfolio allocation
+
+
+
+```{r }
+
+v <- sqrt(252) * sigma(m)
+
+w <- 0.1/v
+
+plot(merge(v, w), multi.panel = T)
+
+```
+
+
+## GARCH with sstd
+
+
+
+```{r }
+
+s <- ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                variance.model = list(model = "sGARCH"),
+                distribution.model = 'sstd')
+
+m <- ugarchfit(data = return, spec = s)
+
+plot(m, which = 'all')
+
+```
+
+
+## GJR-GARCH
+
+
+
+```{r }
+
+s <- ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                variance.model = list(model = "gjrGARCH"),
+                distribution.model = 'sstd')
+
+m <- ugarchfit(data = return, spec = s)
+
+plot(m, which = 'all')
+
+```
+
+
+## AR(1) GJR-GARCH
+
+
+
+```{r }
+
+s <- ugarchspec(mean.model = list(armaOrder = c(1,0)),
+                variance.model = list(model = "gjrGARCH"),
+                distribution.model = 'sstd')
+
+m <- ugarchfit(data = return, spec = s)
+
+plot(m, which = 'all')
+
+```
+
+
+## GJR-GARCH in mean
+
+
+
+```{r }
+
+s <- ugarchspec(mean.model = list(armaOrder = c(0,0),
+                                  archm =T,
+                                  archpow = 2),
+                variance.model = list(model = "gjrGARCH"),
+                distribution.model = 'sstd')
+
+m <- ugarchfit(data = return, spec = s)
+
+plot(m, which = 'all')
+
+```
+
+
+## Simulation
+
+
+
+```{r }
+
+s <- ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                variance.model = list(model = "gjrGARCH"),
+                distribution.model = 'sstd')
+
+m <- ugarchfit(data = return, spec = s)
+
+sfinal <- s
+
+setfixed(sfinal) <- as.list(coef(m))
+
+f2008 <- ugarchforecast(data = return["/2008-12"],
+                        fitORspec = sfinal,
+                        n.ahead = 252)
+
+f2019 <- ugarchforecast(data = return["/2019-12"],
+                        fitORspec = sfinal,
+                        n.ahead = 252)
+
+```
+
+
+### Plots
+
+
+
+```{r }
+
+par(mfrow = c(1,1))
+
+plot(sigma(f2008))
+
+```
+
+
+
+```{r }
+
+plot(sigma(f2019))
+
+```
+
+
+
+
+```{r }
+
+sim <- ugarchpath(spec = sfinal,
+                  m.sim = 3,
+                  n.sim = 1*252,
+                  rseed = 123)
+
+plot.zoo(fitted(sim))
+
+```
+
+
+
+
+```{r }
+
+plot.zoo(sigma(sim))
+
+```
+
+
+
+
+```{r }
+
+p <- 291.52*apply(fitted(sim), 2, 'cumsum') + 291.52
+
+matplot(p, type = "l", lwd = 3)
+
+```
+## The End!
+
+Reference:
+
+https://hounnou-machine-blog.netlify.app/post/project-5/
